@@ -36,22 +36,27 @@ def relative_landmark(landmark_list):
     print(temp_landmark_list)
     return temp_landmark_list
 
-def save_landmarks_to_csv(landmark_list, output_csv_path):
+def save_landmarks_to_csv(landmark_list, video_path):
     """将标志点数据保存为 CSV 文件，包含表头"""
     num_landmarks = len(landmark_list[0]) // 3
     
     # 构建表头，只包含33个特征点的x, y, z
     header = []
-    for i in range(0,num_landmarks-1):
-        header.extend([f'x{i+1}', f'y{i+1}', f'z{i+1}'])
-    
+    for i in range(0,num_landmarks):
+        header.extend([f'x{i}', f'y{i}', f'z{i}'])
+
+
+    # 获取视频文件名并替换扩展名为 .csv
+    base_name = os.path.basename(video_path)
+    csv_path = os.path.splitext(base_name)[0] + ".csv"
+
     # 写入 CSV 文件
-    with open(output_csv_path, 'w', newline='') as csv_file:
+    with open(csv_path, 'w', newline='') as csv_file:
         csv_writer = csv.writer(csv_file)
         csv_writer.writerow(header)  # 写入表头
         csv_writer.writerows(landmark_list)  # 写入数据
 
-    print(f"数据已保存至 {output_csv_path}")
+    print(f"数据已保存至 {csv_path}")
 
 def get_poselandmark_xyz(video_path):
     with mp_pose.Pose(
@@ -85,13 +90,29 @@ def get_poselandmark_xyz(video_path):
     cap.release()
     return relative_landmark_list_total
 
+def process_videos_in_range(start, end, video_dir):
+    """批量处理命名格式为 '3_X.mp4' 的视频文件"""
+    for i in range(start, end + 1):
+        video_filename = f"5_{i}.mp4"
+        video_path = os.path.join(video_dir, video_filename)
 
-video_path = "C:\\Users\\User\\Downloads\\cal\\pushup3.mp4"
-output_csv_path = "output_landmarks.csv"
+        if os.path.exists(video_path):
+            print(f"处理视频: {video_path}")
+            landmarks = get_poselandmark_xyz(video_path)
+            
+            if landmarks:
+                save_landmarks_to_csv(landmarks, video_path)
+        else:
+            print(f"视频文件不存在: {video_path}")
 
+# 使用示例：批量处理 3_1.mp4 到 3_50.mp4 的视频文件
+video_directory = "C:\\Users\\USER\\Downloads\\cal\\5"  # 你的视频文件所在的文件夹
+process_videos_in_range(1, 57, video_directory)
+'''
 # 获取姿态标志点
 landmarks = get_poselandmark_xyz(video_path)
 
 # 保存为 CSV 文件
 if landmarks:
-    save_landmarks_to_csv(landmarks, output_csv_path)   
+    save_landmarks_to_csv(landmarks, video_path)   
+'''
