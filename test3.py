@@ -7,8 +7,6 @@ from PIL import Image, ImageTk
 import os
 import mediapipe as mp
 import numpy as np
-mp_drawing = mp.solutions.drawing_utils
-mp_pose = mp.solutions.pose
 import tensorflow as tf
 import sys
 import matplotlib.pyplot as plt
@@ -16,6 +14,16 @@ import csv
 from datetime import datetime
 import logging
 import pandas as pd
+import itertools
+import copy
+mp_drawing = mp.solutions.drawing_utils
+mp_pose = mp.solutions.pose
+
+def load_model(model_path):
+    return tf.keras.models.load_model(model_path)
+
+model_path = 'my_lstm_model_1.h5' #模型1
+model = load_model(model_path)
 
 def save_to_csv():
     csv_file_path = 'D:\\cal\\user_data.csv'
@@ -53,7 +61,7 @@ def save_to_csv():
 def cal_button_clicked_1():
     try:
         video1 = video1_entry.get()
-        result1, total = calculate_activities(video1, video_canvas)
+        result1, total = play_video_with_landmarks_and_calories(video1, model)
 
         result1_var.set(result1)
         total_var.set(total)
@@ -229,111 +237,241 @@ def play_fixed_video(video_path, canvas):
 
     update_frame()
 
-# 计算活动卡路里和总卡路里
-def calculate_activities(video1, video_canvas):
-    # Set default results for each activity
-    result1 = 0.0
 
-    def calculate_1(video1, video_canvas):
-        if video1:
-            cap = cv2.VideoCapture(video1)
-            if not cap.isOpened():
-                print("Error opening video file")
-                return 0.0
+# 标签对应字典，英文改为中文
+label_dict = {
+    0: "Push-up",
+    1: "Sit-up",
+    2: "Squat",
+    3: "Pull-up",
+    4: "Run",
+    5: "Jump"
+}
+
+def relative_landmark(landmark_list):
+    """计算归一化的相对位置，用于运动预测模型"""
+    temp_landmark_list = copy.deepcopy(landmark_list)
+    base_x, base_y, base_z = 0, 0, 0
+    for index, landmark_point in enumerate(temp_landmark_list):
+        if index == 0:
+            base_x, base_y, base_z = landmark_point[0], landmark_point[1], landmark_point[2]
+        temp_landmark_list[index][0] = temp_landmark_list[index][0] - base_x
+        temp_landmark_list[index][1] = temp_landmark_list[index][1] - base_y
+        temp_landmark_list[index][2] = temp_landmark_list[index][2] - base_z
+
+    shoulder_length_x = abs(temp_landmark_list[11][0] - temp_landmark_list[12][0])
+
+    if shoulder_length_x == 0:
+        shoulder_length_x = 1  # 防止除以0
+
+    for idx, relative_point in enumerate(temp_landmark_list):
+        temp_landmark_list[idx][0] = temp_landmark_list[idx][0] / shoulder_length_x
+        temp_landmark_list[idx][1] = temp_landmark_list[idx][1] / shoulder_length_x
+        temp_landmark_list[idx][2] = temp_landmark_list[idx][2] / shoulder_length_x
+
+    temp_landmark_list = list(itertools.chain.from_iterable(temp_landmark_list))
+    
+    return temp_landmark_list
+
+def load_model(model_path):
+    """加载用于运动分类的深度学习模型"""
+    return tf.keras.models.load_model(model_path)
+# 跑步的角度计算
+def calculate_running_angle(landmark_list):
+    # 左腿的大腿-小腿角度（髋关节、膝盖、脚踝）
+    left_leg_angle = calculate_angle(landmark_list[23], landmark_list[25], landmark_list[27])
+
+    # 右腿的大腿-小腿角度（髋关节、膝盖、脚踝）
+    right_leg_angle = calculate_angle(landmark_list[24], landmark_list[26], landmark_list[28])
+
+    # 左腿的躯干-大腿角度（肩膀、髋关节、膝盖）
+    left_torso_angle = calculate_angle(landmark_list[11], landmark_list[23], landmark_list[25])
+
+    # 右腿的躯干-大腿角度（肩膀、髋关节、膝盖）
+    right_torso_angle = calculate_angle(landmark_list[12], landmark_list[24], landmark_list[26])
+
+    return left_leg_angle, right_leg_angle, left_torso_angle, right_torso_angle
+ 
+def play_video_with_landmarks_and_calories(video1, model):
+    """通过深度学习模型预测运动类型，计算动作次数并根据运动类型计算卡路里"""
+    with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+        cap = cv2.VideoCapture(video1)
+
+        if not cap.isOpened():
+            print(f"无法打开视频文件: {video1}")
+            return
+
+        relative_landmark_list_total = []
+        counter = 0  # 动作计数器
+        stage = None  # 动作阶段
+
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
             
-            w, h, fps = (int(cap.get(x)) for x in (cv2.CAP_PROP_FRAME_WIDTH, cv2.CAP_PROP_FRAME_HEIGHT, cv2.CAP_PROP_FPS))
-            video_writer = cv2.VideoWriter("count_yolov8_v1.avi", cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h)) 
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = pose.process(frame_rgb)
 
-            def calculate_angle(a, b, c):
-                a = np.array(a)  # First
-                b = np.array(b)  # Mid
-                c = np.array(c)  # End
-    
-                radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
-                angle = np.abs(radians * 180.0 / np.pi)
-    
-                if angle > 180.0:
-                    angle = 360 - angle
-                return angle
+            # 检测到关键点时进行处理
+            if results.pose_landmarks and hasattr(results.pose_landmarks, 'landmark'):
+                post_landmark_list = []
+                for value in results.pose_landmarks.landmark:
+                    temp_value = [value.x, value.y, value.z]
+                    post_landmark_list.append(temp_value)
 
-            # Curl counter variables
-            counter = 0 
-            stage = None
+                relative_landmark_list = relative_landmark(post_landmark_list)
+                relative_landmark_list_total.append(relative_landmark_list)
 
-            # Setup mediapipe instance
-            with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
-                def update_frame():
-                    nonlocal counter, stage
-                    ret, frame = cap.read()
-                    if not ret:
-                        cap.release()
-                        video_writer.release()
-                        return 
+                # 每30帧预测一次运动类型
+                if len(relative_landmark_list_total) >= 30:
+                    input_data = np.array(relative_landmark_list_total[-30:]).reshape(1, 30, -1)
+                    predictions = model.predict(input_data)
+                    predicted_class = np.argmax(predictions, axis=-1)[0]
                     
-                    # Continue with processing...
-                    # Frame processing code here
+                    # 将预测结果转为中文运动名称
+                    predicted_label = label_dict.get(predicted_class, "未知运动")
+                    print(f"预测类别: {predicted_label}")
 
-                update_frame()
+                    # 根据预测的运动类型处理动作和卡路里计算
+                    if predicted_class == 0:  # 伏地挺身
+                        angle = calculate_angle(post_landmark_list[11], post_landmark_list[13], post_landmark_list[15])
+                        if angle > 160:
+                            stage = "down"
+                        if angle < 50 and stage == "down":
+                            stage = "up"
+                            counter += 1
+                            print(f"伏地挺身次数: {counter}")
+                    elif predicted_class == 1:  # 仰臥起坐
+                        angle = calculate_angle(post_landmark_list[12], post_landmark_list[24], post_landmark_list[26])
+                        if angle > 140:
+                            stage = "down"
+                        if angle < 50 and stage == "down":
+                            stage = "up"
+                            counter += 1
+                            print(f"仰臥起坐次数: {counter}")
+                    
+                    elif predicted_class == 2:  # 深蹲
+                        angle = calculate_angle(post_landmark_list[24], post_landmark_list[26], post_landmark_list[28])
+                        if angle > 140:
+                            stage = "up"
+                        if angle < 100 and stage == "up":
+                            stage = "down"
+                            counter += 1
+                            print(f"深蹲次数: {counter}")
 
-            result1 = counter * 0.4
-            return result1 
+                    elif predicted_class == 3:  # 引體向上
+                        angle = calculate_angle(post_landmark_list[12], post_landmark_list[14], post_landmark_list[16])
+                        if angle > 140:
+                            stage = "down"
+                        if angle < 80 and stage == "down":
+                            stage = "up"
+                            counter += 1
+                            print(f"引體向上次数: {counter}")  
 
-        else:
-            result1 = 0.0
-
-    # 先进行活动的计算
-    result1 = calculate_1(video1, video_canvas)
+                    elif predicted_class == 4:  # 跑
+                        left_leg_angle, right_leg_angle, left_torso_angle, right_torso_angle = calculate_running_angle(post_landmark_list)
+                        # 检查左腿膝盖的角度
+                        if left_leg_angle < 80:
+                            stage = "knee bent"
+                        if left_leg_angle > 160 and stage == "knee bent":
+                            stage = "leg straight"
+                            counter += 1
+                        print(f"跑步步数: {counter}")
     
-    # 然后再进行控件的配置，避免重复调用
-    if 'group0' in globals():
-        group0.config(width=25, height=9)
+                        # 检查右腿膝盖的角度
+                        if right_leg_angle < 80:
+                            stage = "knee bent"
+                        if right_leg_angle > 160 and stage == "knee bent":
+                            stage = "leg straight"
+                            counter += 1
+                            print(f"跑步步数: {counter}")
 
-    total = result1
-    return round(result1, 2), round(total, 2)
-     # 处理活动3和消耗热量
-'''
-    def calculate_activity3_and_burn(activity3_text, burn3_text):
-        # 获取用户输入的运动项
-        #activity3 = activity3_entry.get("1.0", "end-1c")  # 获取从第1行第0个字符开始到末尾的输入内容，去除最后的换行符
-        #burn3 = burn3_entry.get("1.0", "end-1c")  # 获取对应的消耗热量
+                         # 显示左腿的躯干-大腿角度
+                        if left_torso_angle > 60:
+                            print(f"左腿抬高，角度: {left_torso_angle}")
+                        if left_torso_angle < 30:
+                            print(f"左腿接近伸直，角度: {left_torso_angle}") 
 
-        # 分行处理输入数据
-        activity_lines = [line.strip() for line in activity3_text.splitlines() if line.strip()]
-        burn_lines = [line.strip() for line in burn3_text.splitlines() if line.strip()]
+                        # 显示右腿的躯干-大腿角度
+                        if right_torso_angle > 60:
+                            print(f"右腿抬高，角度: {right_torso_angle}")
+                        if right_torso_angle < 30:
+                            print(f"右腿接近伸直，角度: {right_torso_angle}")                                                        
 
-        # 检查运动项和消耗热量的数量是否一致
-        if len(activity_lines) != len(burn_lines):
-            tk.messagebox.showerror("Error", "運動項目和消耗熱量的數量不匹配！")
-            return 0.0
+                    elif predicted_class == 5:  # 跳
+                        # 获取左右脚踝的 Z 轴坐标
+                        left_ankle_z = post_landmark_list[27][2]  # 左脚踝的Z坐标
+                        right_ankle_z = post_landmark_list[28][2]  # 右脚踝的Z坐标
     
-        burn_values = []
-
-        for burn in burn_lines:
-            try:
-                burn_value = float(burn)  # 转换消耗热量为浮点数
-                burn_values.append(burn_value)
-            except ValueError:
-                print(f"無效的熱量數值: {burn}")
-
-        # 计算总消耗热量
-        result3  = sum(burn_values) if burn_values else 0.0
-
-        # 显示计算结果
-        print(f" {result3 }  kcal")
-        #tk.messagebox.showinfo("計算結果", f"總消耗熱量: {result3 } kcal")
-        return result3
-    '''
-
+                        # 计算左右脚踝的Z轴平均高度
+                        avg_ankle_z = (left_ankle_z + right_ankle_z) / 2
     
+                        # 设置跳跃的高度阈值，比如 -0.3 （根据模型测得的Z坐标数据调整）
+                        jump_threshold = -0.3
+
+                        # 设置原地站立时的脚踝高度（可以初始化为视频开始时的值）
+                        standing_height = -0.5  # 比如站立时Z轴平均值（可以根据初始帧计算）
+    
+                        # 检测跳跃上升阶段（脚踝高度大于某个阈值）
+                        if avg_ankle_z > jump_threshold:
+                            stage = "up"  # 上升阶段
+                            print(f"检测到跳跃上升，平均脚踝高度: {avg_ankle_z}")
+
+                        # 检测跳跃落地阶段（脚踝高度回到接近站立的高度）
+                        if avg_ankle_z < standing_height + 0.05 and stage == "up":  # 回到接近站立高度
+                            stage = "down"  # 落地阶段
+                            counter += 1  # 跳跃计数
+                            print(f"跳跃次数: {counter}")
+
+                    # 在视频上显示预测结果和动作次数
+                    cv2.putText(frame, f'Predicted: {predicted_label}', (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                    cv2.putText(frame, f'Counter: {counter}', (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+            cv2.imshow('Video with Landmarks', frame)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        
+        # 释放资源
+        cap.release()
+        cv2.destroyAllWindows()
+
+        # 计算总卡路里
+        calories_burned = calculate_calories(predicted_class, counter)
+        print(f"总消耗卡路里: {calories_burned}")
+
+def calculate_angle(a, b, c):
+    """计算三个关键点之间的角度，用于动作检测"""
+    a = np.array(a)
+    b = np.array(b)
+    c = np.array(c)
+
+    radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
+    angle = np.abs(radians * 180.0 / np.pi)
+
+    if angle > 180.0:
+        angle = 360 - angle
+    return angle
+
+def calculate_calories(activity_type, count):
+    """根据运动类型和完成的动作次数计算卡路里"""
+    calories_per_rep = {
+        0: 0.4,  # 伏地挺身每次0.4大卡
+        1: 0.3,  # 仰臥起坐每次0.3大卡
+        2: 0.5,  # 深蹲每次0.5大卡
+        3: 0.6,  # 拉單槓每次0.6大卡
+        4: 0.1,  # 跑步每步0.1大卡
+        5: 0.7   # 跳每次0.7大卡
+    }
+    result1 = calories_per_rep.get(activity_type, 0) * count
+    return result1
 
 
 def cal_button_clicked():
     video1 = video1_entry.get()
-    '''
-    activity3_text = activity3_entry.get("1.0", tk.END).strip()
-    burn3_text = burn3_entry.get("1.0", tk.END).strip()
-    '''
-    result1,  total = calculate_activities( video1,  video_canvas)
+
+    result1,  total = play_video_with_landmarks_and_calories(video1, model)
     
     result1_var.set(result1)
 
