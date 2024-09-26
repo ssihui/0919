@@ -135,7 +135,8 @@ def play_video_with_landmarks(video_path, model):
         cv2.destroyAllWindows()
 
 # 使用示例
-video_path = 'D:\\0925\\sets.mp4'  # 替换为你的视频文件路径
-model_path = 'my_lstm_model.h5'  # 替换为你的模型路径
+video_path = 'D:\\0925\\all2.mp4'  # 替换为你的视频文件路径
+model_path = 'my_lstm_model.h5'  # 模型2
+model_path = 'my_lstm_model_1.h5' #模型1
 model = load_model(model_path)
 play_video_with_landmarks(video_path, model)
