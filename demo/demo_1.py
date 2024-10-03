@@ -876,7 +876,7 @@ def cal_button_clicked_1():
         messagebox.showerror("錯誤", f"计算时发生错误: {e}")
         logging.error(f"计算时发生错误: {e}")
 
-mygoogleapikey = 'AIzaSyAgaxfA7wunysfu6MBjikKDQ2txgh9DUow' # 替换API 密碼
+mygoogleapikey = '' # 替换API 密碼
 genai.configure(api_key=mygoogleapikey)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
