@@ -183,13 +183,21 @@ def get_user_dates(data, selected_user):
     # 筛选出该用户的所有日期
     user_dates = [entry["Timestamp"].split(' ')[0] for entry in data if entry["Name"] == selected_user]
     return sorted(set(user_dates), reverse=True)
-# 计算最近7天的平均卡路里消耗
-def calculate_7_day_average(data, activity_names):
-    # 初始化每个活动的总卡路里和计数
+
+# 计算最近7天的平均卡路里消耗 (基于当前用户)
+def calculate_7_day_average(data, selected_user, activity_names):
+    # 筛选出该用户的数据，并按日期排序
+    user_data = [entry for entry in data if entry["Name"] == selected_user]
+    user_data = sorted(user_data, key=lambda x: x["Timestamp"], reverse=True)  # 按日期排序
+
+    # 如果用户数据不足7天，取全部数据
+    recent_data = user_data[:7] if len(user_data) >= 7 else user_data
+
+    # 初始化每个活动的总卡路里
     activity_totals = {activity: [] for activity in activity_names}
 
     # 遍历最近7天的数据
-    for entry in data[-7:]:
+    for entry in recent_data:
         activity_calories_str = entry["Activity1 Result (kcal)"]
         lines = activity_calories_str.split('\n')
 
@@ -208,7 +216,7 @@ def calculate_7_day_average(data, activity_names):
     return activity_averages
 
 # 创建图表
-def create_chart(entry, data):
+def create_chart(entry, data, selected_user):
     activity_names = []
     activity_calories = []
 
@@ -224,8 +232,8 @@ def create_chart(entry, data):
             activity_names.append(activity)
             activity_calories.append(calories)
 
-    # 计算最近7天的平均卡路里消耗
-    activity_averages = calculate_7_day_average(data, activity_names)
+    # 计算该用户最近7天的平均卡路里消耗
+    activity_averages = calculate_7_day_average(data, selected_user, activity_names)
 
     # 创建 Matplotlib 图表
     fig, ax1 = plt.subplots(figsize=(10, 6))
@@ -267,33 +275,44 @@ def update_chart_and_ai(data, selected_user, selected_date, canvas, ai_response_
             break
 
     if selected_entry:
+        # 清除旧图表
+        canvas.get_tk_widget().delete("all")  # 先清空Canvas
+        
         # 创建并显示图表
-        fig = create_chart(selected_entry, data)
+        fig = create_chart(selected_entry, data, selected_user)  # 传入selected_user
         canvas.figure = fig
-        canvas.draw()
+        canvas.draw()  # 重新绘制
 
         # 显示AI建议
         ai_response_text = selected_entry.get("AI Response", "无 AI 建议")
         ai_response_label.config(text=ai_response_text)
+    else:
+        # 如果未找到匹配的数据，清空显示
+        ai_response_label.config(text="未找到匹配数据")
+
 # 定义全局变量
 selected_date_var = tk.StringVar()
+
 # 用户选择后更新日期选项
 def update_dates(data, selected_user, date_dropdown, canvas, ai_response_label):
     # 获取该用户的所有日期
     user_dates = get_user_dates(data, selected_user)
-    
+
     if user_dates:
         # 更新日期下拉菜单的选项
         date_dropdown['menu'].delete(0, 'end')
         for date in user_dates:
             date_dropdown['menu'].add_command(label=date, command=tk._setit(selected_date_var, date))
+        
+        # 设置默认日期为最新日期，并立即触发图表更新
         selected_date_var.set(user_dates[0])  # 默认选择最新日期
-
-        # 显示最新日期的数据和图表
-        update_chart_and_ai(data, selected_user, user_dates[0], canvas, ai_response_label)
+        update_chart_and_ai(data, selected_user, user_dates[0], canvas, ai_response_label)  # 直接更新图表
     else:
+        # 如果没有日期可用，清空菜单
         date_dropdown['menu'].delete(0, 'end')
         date_dropdown['menu'].add_command(label="无可用日期", command=tk._setit(selected_date_var, "无可用日期"))
+        ai_response_label.config(text="无可用日期")
+
 # 读取 JSON 文件
 def load_food_options():
     with open('food_options.json', 'r', encoding='utf-8') as file:
@@ -772,6 +791,7 @@ def play_video_with_landmarks_and_calories(video1, model, dframe = dframe ):
 
     df = pd.read_csv('output_data.csv') 
     # 計算卡路里
+    
     calorie_results, total_calories = calculate_calories(df)
     display_results(calorie_results,total_calories)
 
