@@ -1,0 +1,28 @@
+Timestamp,Name,Age,Height (cm),Weight (kg),Gender,Activity Level,TDEE (kcal),Activity  (kcal),Activity1 Result (kcal),Food Cost (kcal),Remaining (kcal),Selected Meals,Selected Drinks
+2024-10-03 12:46:29,王小明,25,170,70,男,無活動：久坐,2046.00 kcal,12.42,"Pushup: 8Time, 3.20 kcal
+Abworkout: 7Time, 1.12 kcal
+Squat: 5Time, 2.10 kcal
+Pullup: 6Time, 6.00 kcal
+Run: 0Time, 0.00 kcal
+Jump: 0Time, 0.00 kcal
+Rest: 0Time, 0.00 kcal
+
+總卡路里: 12.42 kcal",512.00 kcal,1546.42 kcal,Bread_320,Tea_192
+2024-10-03 22:09:03,王小明,25,170,70,男,無活動：久坐,2046.00 kcal,12.42,"Pushup: 8Time, 3.20 kcal
+Abworkout: 7Time, 1.12 kcal
+Squat: 5Time, 2.10 kcal
+Pullup: 6Time, 6.00 kcal
+Run: 0Time, 0.00 kcal
+Jump: 0Time, 0.00 kcal
+Rest: 0Time, 0.00 kcal
+
+總卡路里: 12.42 kcal",768.00 kcal,1290.42 kcal,Bread_320,"Tea_192, Coffee_256"
+2024-10-04 10:32:10,王小明,25,170,70,男,無活動：久坐,2046.00 kcal,12.42,"Pushup: 8Time, 3.20 kcal
+Abworkout: 7Time, 1.12 kcal
+Squat: 5Time, 2.10 kcal
+Pullup: 6Time, 6.00 kcal
+Run: 0Time, 0.00 kcal
+Jump: 0Time, 0.00 kcal
+Rest: 0Time, 0.00 kcal
+
+總卡路里: 12.42 kcal",781.00 kcal,1277.42 kcal,Hamburger_333,"Tea_192, Coffee_256"
